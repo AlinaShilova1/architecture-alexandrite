@@ -1,0 +1,29 @@
+@startuml
+actor Operator as Op
+participant "MES FE" as FE
+participant "MES API" as API
+participant "Redis Cache" as Cache
+participant "Read Model DB" as RDB
+
+Op -> FE : Открыть «Заказы: PRICE_CALCULATED»
+FE -> API : GET /orders?status=PRICE_CALCULATED&cursor=...
+API -> Cache : GET orders:list:{status}:{cursor}:{filters}
+alt Ключ найден (cache hit)
+  Cache --> API : JSON список
+  API --> FE : 200 OK (список)
+else Ключ не найден (cache miss)
+  API -> RDB : SELECT by status (keyset, LIMIT)
+  RDB --> API : rows
+  API -> Cache : SETEX(key, TTL, rows)\n(планируем refresh-ahead)
+  API --> FE : 200 OK (список)
+end
+== Пуш новых заказов ==
+participant "RabbitMQ" as MQ
+participant "Order Orchestrator/CRM" as ORCH
+ORCH -> MQ : Event OrderStatusChanged(new=PRICE_CALCULATED)
+API <- MQ : consume OrderStatusChanged
+API -> Cache : INVALIDATE all keys for status=PRICE_CALCULATED\n(по сету списка ключей)
+note right of API
+  Обновление первого экрана запускает refresh-ahead
+end note
+@enduml
