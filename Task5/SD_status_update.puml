@@ -1,0 +1,17 @@
+@startuml
+actor Operator as Op
+participant "MES FE" as FE
+participant "MES API" as API
+participant "MES DB" as DB
+participant "Redis Cache" as Cache
+participant "RabbitMQ" as MQ
+
+Op -> FE : Нажать «Взять в работу»
+FE -> API : POST /orders/{id}/start
+API -> DB : UPDATE orders SET status='MANUFACTURING_STARTED' WHERE id=...
+DB --> API : OK (commit)
+API -> MQ : publish OrderStatusChanged(orderId, old, new)
+API -> Cache : DEL orders:detail:{id}
+API -> Cache : Invalidate lists по old/new статусам (по наборам ключей)
+API --> FE : 200 OK (новый статус)
+@enduml
